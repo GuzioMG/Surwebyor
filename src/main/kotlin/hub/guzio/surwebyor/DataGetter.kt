@@ -1,11 +1,12 @@
 package hub.guzio.surwebyor
 
 import folk.sisby.surveyor.WorldSummary
-import folk.sisby.surveyor.util.RegionPos
 import io.nayuki.png.image.BufferedRgbaImage
-import net.minecraft.core.BlockPos
+import net.fabricmc.api.EnvType
+import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.Level
+import net.minecraft.world.level.biome.Biome
 import net.minecraft.world.level.material.MapColor
 import java.util.Objects
 
@@ -35,8 +36,6 @@ object DataGetter {
         val terrainMap = map?.get(coords)?.toSingleLayer(min, max, max)
 
         if (Objects.isNull(terrainMap)) return null
-        val x = coords.x*16
-        val z = coords.z*16
         val depthMap = terrainMap!!.depths
         val biomeMap = terrainMap.biomes
         val blockMap = terrainMap.blocks
@@ -55,8 +54,8 @@ object DataGetter {
                 val mapColor = blockPalette.byId(blockMap[index])!!.defaultMapColor()
                 when (mapColor.id) {
                     MapColor.WATER.id -> RGB.of(biomePalette.byId(biomeMap[index])!!.waterColor, false)
-                    //MapColor.GRASS.id -> RGB.of(biomePalette.byId(biomeMap[index])!!.getGrassColor(1.0, 1.0)) //„And though we're not sure what that data means...” ...We know it's multiplied by 0.0225 each (see: Go to Definition). So small values will probably be fine. I hope so.
-                    //MapColor.PLANT.id -> RGB.of(biomePalette.byId(biomeMap[index])!!.foliageColor)
+                    MapColor.GRASS.id -> getBiomeColor(biomePalette.byId(biomeMap[index])!!).grass
+                    MapColor.PLANT.id -> getBiomeColor(biomePalette.byId(biomeMap[index])!!).plants
                     MapColor.NONE.id  -> RGB.of()
                     else -> RGB.of(mapColor.calculateRGBColor(MapColor.Brightness.HIGH), true)
                 }
@@ -86,5 +85,16 @@ object DataGetter {
             x++
         }
         return target
+    }
+
+    fun getBiomeColor(biome: Biome): BiomeEntryProcessed {
+        return if (FabricLoader.getInstance().environmentType == EnvType.CLIENT) BiomeEntryProcessed(
+            RGB.of(biome.getGrassColor(1.0, 1.0), false), //„And though we're not sure what that data means...” ...We know it's multiplied by 0.0225 each (see: Go to Definition). So small values will probably be fine. I hope so.
+            RGB.of(biome.foliageColor, false)
+        )
+        else BiomeEntryProcessed(
+            RGB.of(MapColor.GRASS.calculateRGBColor(MapColor.Brightness.HIGH), true),
+            RGB.of(MapColor.PLANT.calculateRGBColor(MapColor.Brightness.HIGH), true)
+        )
     }
 }
