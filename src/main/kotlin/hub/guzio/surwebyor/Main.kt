@@ -23,16 +23,13 @@ import java.util.*
 
 object Main : ModInitializer {
 	const val MOD_ID: String = "surwebyor"
-	const val CONFIGNAME = "surwebyor.json"
-
-	val SITE = String(javaClass.classLoader.getResourceAsStream("assets/surwebyor/index.html")?.readAllBytes() ?: "There must've been an error when loading Surwebyor and the default index.html couldn't be extracted from its JAR. Please contact the server admin if you're seeing this error while viewing the map of some server, or (if this is singleplayer / you're the admin and are sure you didn't mess anything up) contact Surwebyor devs on GitHub.".encodeToByteArray())
-	val LOGGER = LoggerFactory.getLogger(MOD_ID)
-
-	var CONFIG = Config(8080, 0, 0, "Surwebyor World Map", "/",arrayOf())
-
+	private const val CONFIGNAME = "surwebyor.json"
+	private val LOGGER = LoggerFactory.getLogger(MOD_ID)
 	private val LEVELS = HashMap<ResourceKey<Level>, Level>()
-	private var SERVER: EmbeddedServer<JettyApplicationEngine, JettyApplicationEngineBase.Configuration>? = null
 	private val JSON = Json { ignoreUnknownKeys = true }
+	private val SITE = String(javaClass.classLoader.getResourceAsStream("assets/surwebyor/index.html")?.readAllBytes() ?: "There must've been an error when loading Surwebyor and the default index.html couldn't be extracted from its JAR. Please contact the server admin if you're seeing this error while viewing the map of some server, or (if this is singleplayer / you're the admin and are sure you didn't mess anything up) contact Surwebyor devs on GitHub.".encodeToByteArray())
+	private var SERVER: EmbeddedServer<JettyApplicationEngine, JettyApplicationEngineBase.Configuration>? = null
+	private var CONFIG = Config(8080, 0, 0, "Surwebyor World Map", "/",arrayOf())
 
 	override fun onInitialize() {
 		LOGGER.info("Surwebyor is its calling sugar-mommy (Surveyor).  OwO")
@@ -93,6 +90,8 @@ object Main : ModInitializer {
 		}
 		return null
 	}
+
+	val site get() = CONFIG.applyOntoSite(SITE)
 }
 
 fun Application.rootModule() {
@@ -102,10 +101,10 @@ fun Application.rootModule() {
 fun Application.configureRouting() {
 	routing {
 		get("/") {
-			call.respondText(Main.CONFIG.applyOntoSite(Main.SITE), contentType = if (Main.SITE.startsWith("<!DOCTYPE html>")) ContentType.Text.Html else ContentType.Text.Plain)
+			call.respondText(Main.site, contentType = if (Main.site.startsWith("<!DOCTYPE html>")) ContentType.Text.Html else ContentType.Text.Plain)
 		}
 		get("/index.html") {
-			call.respondText(Main.CONFIG.applyOntoSite(Main.SITE), contentType = if (Main.SITE.startsWith("<!DOCTYPE html>")) ContentType.Text.Html else ContentType.Text.Plain)
+			call.respondText(Main.site, contentType = if (Main.site.startsWith("<!DOCTYPE html>")) ContentType.Text.Html else ContentType.Text.Plain)
 		}
 		get("/mapdata/{namespace}/{dimension}/{x}/{z}/{zoom}/tile.png") {
 			val params = call.parameters
