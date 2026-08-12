@@ -1,5 +1,6 @@
 package hub.guzio.surwebyor
 
+import com.mojang.serialization.Lifecycle
 import folk.sisby.surveyor.WorldSummary
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -10,12 +11,18 @@ import io.ktor.server.routing.*
 import io.nayuki.png.ImageEncoder
 import io.nayuki.png.chunk.Ihdr
 import kotlinx.serialization.json.Json
+import net.fabricmc.api.EnvType
 import net.fabricmc.api.ModInitializer
 import net.fabricmc.fabric.api.event.lifecycle.v1.*
 import net.fabricmc.loader.api.FabricLoader
+import net.minecraft.core.MappedRegistry
+import net.minecraft.core.registries.Registries
 import net.minecraft.resources.ResourceKey
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.Level
+import net.minecraft.world.level.biome.Biome
+import net.minecraft.world.level.material.MapColor
 import org.slf4j.LoggerFactory
 import java.io.ByteArrayOutputStream
 import java.util.*
@@ -26,6 +33,7 @@ object Main : ModInitializer {
 	private const val CONFIGNAME = "surwebyor.json"
 	private val LOGGER = LoggerFactory.getLogger(MOD_ID)
 	private val LEVELS = HashMap<ResourceKey<Level>, Level>()
+	private val BIOMES = HashMap<Biome, BiomeColor>()
 	private val JSON = Json { ignoreUnknownKeys = true }
 	private val SITE = String(javaClass.classLoader.getResourceAsStream("assets/surwebyor/index.html")?.readAllBytes() ?: "There must've been an error when loading Surwebyor and the default index.html couldn't be extracted from its JAR. Please contact the server admin if you're seeing this error while viewing the map of some server, or (if this is singleplayer / you're the admin and are sure you didn't mess anything up) contact Surwebyor devs on GitHub.".encodeToByteArray())
 	private var SERVER: EmbeddedServer<JettyApplicationEngine, JettyApplicationEngineBase.Configuration>? = null
@@ -57,6 +65,12 @@ object Main : ModInitializer {
 		LOGGER.info("Surwebyor is registering events...")
 		ServerWorldEvents.LOAD.register { _, level ->
 			LOGGER.info("Surwebyor detected a new ${level.dimension()}")
+			fillBiomes(level
+				.registryAccess()
+				.registry(Registries.BIOME)
+				.orElse(MappedRegistry(ResourceKey.createRegistryKey(ResourceLocation.fromNamespaceAndPath("surwebyor", "nobiomesfound")), Lifecycle.stable()))!!
+				.entrySet()
+			)
 			LEVELS[level.dimension()] = level
 		}
 		ServerWorldEvents.UNLOAD.register { _, level ->
@@ -79,6 +93,42 @@ object Main : ModInitializer {
 		LOGGER.info("Surwebyor is done starting.")
 	}
 
+	private fun fillBiomes(registryEntries: Set<Map.Entry<ResourceKey<Biome>, Biome>>) {
+		val knownBiomes = HashMap<String, BiomeColor>()
+		val env = FabricLoader.getInstance().environmentType
+		if (env == EnvType.SERVER) for ((id, colors) in CONFIG.biomes) knownBiomes[id] = colors
+
+		for ((key, biome) in registryEntries) {
+			BIOMES[biome] = knownBiomes.getOrPut(key.location().toString()) {
+				return@getOrPut when(env) {
+                    EnvType.CLIENT -> BiomeColor(
+						RGB.of(biome.getGrassColor(1.0, 1.0), false),
+						RGB.of(biome.foliageColor, false)
+					)
+                    EnvType.SERVER -> {
+						LOGGER.warn("Your Surwebyor config doesn't contain any biome color information for $key and you're on a server, where that information cannot be obtained. Falling back on vanilla green colors for that biome.")
+						 /*return@when*/ BiomeColor(
+							RGB.of(MapColor.GRASS.calculateRGBColor(MapColor.Brightness.HIGH), true),
+							RGB.of(MapColor.PLANT.calculateRGBColor(MapColor.Brightness.HIGH), true)
+						)
+					}
+                }
+			}
+        }
+
+		if (env == EnvType.CLIENT) {
+			val discoveredBiomes = Array(knownBiomes.size) {
+				return@Array BiomeColorEntry("PLACEHOLDER", BiomeColor(RGB.of(), RGB.of()))
+			}
+
+			for ((i, biome) in knownBiomes.entries.withIndex()) {
+				discoveredBiomes[i] = BiomeColorEntry(biome.key, biome.value)
+			}
+
+			CONFIG = Config(CONFIG.port, CONFIG.defaultX, CONFIG.defaultZ, CONFIG.title, CONFIG.prefix, discoveredBiomes)
+		}
+	}
+
 	fun getLevel(id: ResourceKey<Level>?): Level? {
 		return if (Objects.isNull(id)) null
 		else LEVELS[id]
@@ -91,6 +141,13 @@ object Main : ModInitializer {
 		return null
 	}
 
+	fun getBiomeColor(biome: Biome): BiomeColor = BIOMES.getOrPut(biome) {
+		LOGGER.error("Surwebyor doesn't have any biome color information for $biome, which means it must somehow not be in the biome registry, or it must've been added to it after the world was already loaded and all registries are supposedly frozen. Some other mod must be doing some serious shenanigans with registration - EXPECT POTENTIAL INSTABILITY! Anyway, falling back on vanilla green colors for that biome.")
+		return@getOrPut BiomeColor(
+			RGB.of(MapColor.GRASS.calculateRGBColor(MapColor.Brightness.HIGH), true),
+			RGB.of(MapColor.PLANT.calculateRGBColor(MapColor.Brightness.HIGH), true)
+		)
+	}
 	val site get() = CONFIG.applyOntoSite(SITE)
 }
 

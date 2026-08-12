@@ -1,6 +1,7 @@
 package hub.guzio.surwebyor
 
 import folk.sisby.surveyor.WorldSummary
+import hub.guzio.surwebyor.Main.getBiomeColor
 import io.nayuki.png.image.BufferedRgbaImage
 import net.fabricmc.api.EnvType
 import net.fabricmc.loader.api.FabricLoader
@@ -52,7 +53,7 @@ object DataGetter {
             val colorBase = if (waterMap[index] > 0) RGB.of(biomePalette.byId(biomeMap[index])!!.waterColor, false) //We can't just rely on MapColor.WATER.id check below because Surveyor will cut straight through simple water blocks and return the seabed instead.
             else {
                 val mapColor = blockPalette.byId(blockMap[index])!!.defaultMapColor()
-                when (mapColor.id) {
+                /*return@else*/ when (mapColor.id) {
                     MapColor.WATER.id -> RGB.of(biomePalette.byId(biomeMap[index])!!.waterColor, false)
                     MapColor.GRASS.id -> getBiomeColor(biomePalette.byId(biomeMap[index])!!).grass
                     MapColor.PLANT.id -> getBiomeColor(biomePalette.byId(biomeMap[index])!!).plants
@@ -85,16 +86,5 @@ object DataGetter {
             x++
         }
         return target
-    }
-
-    fun getBiomeColor(biome: Biome): BiomeEntryProcessed {
-        return if (FabricLoader.getInstance().environmentType == EnvType.CLIENT) BiomeEntryProcessed(
-            RGB.of(biome.getGrassColor(1.0, 1.0), false), //„And though we're not sure what that data means...” ...We know it's multiplied by 0.0225 each (see: Go to Definition). So small values will probably be fine. I hope so.
-            RGB.of(biome.foliageColor, false)
-        )
-        else BiomeEntryProcessed(
-            RGB.of(MapColor.GRASS.calculateRGBColor(MapColor.Brightness.HIGH), true),
-            RGB.of(MapColor.PLANT.calculateRGBColor(MapColor.Brightness.HIGH), true)
-        )
     }
 }
