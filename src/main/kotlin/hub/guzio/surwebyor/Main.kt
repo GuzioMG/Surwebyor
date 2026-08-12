@@ -1,5 +1,6 @@
 package hub.guzio.surwebyor
 
+import com.mojang.brigadier.Command
 import com.mojang.serialization.Lifecycle
 import folk.sisby.surveyor.WorldSummary
 import io.ktor.http.*
@@ -13,10 +14,15 @@ import io.nayuki.png.chunk.Ihdr
 import kotlinx.serialization.json.Json
 import net.fabricmc.api.EnvType
 import net.fabricmc.api.ModInitializer
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback
 import net.fabricmc.fabric.api.event.lifecycle.v1.*
 import net.fabricmc.loader.api.FabricLoader
+import net.minecraft.commands.Commands
 import net.minecraft.core.MappedRegistry
 import net.minecraft.core.registries.Registries
+import net.minecraft.network.chat.Component
 import net.minecraft.resources.ResourceKey
 import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.level.ChunkPos
@@ -26,6 +32,7 @@ import net.minecraft.world.level.material.MapColor
 import org.slf4j.LoggerFactory
 import java.io.ByteArrayOutputStream
 import java.util.*
+import kotlin.jvm.optionals.getOrElse
 
 
 object Main : ModInitializer {
@@ -68,7 +75,10 @@ object Main : ModInitializer {
 			fillBiomes(level
 				.registryAccess()
 				.registry(Registries.BIOME)
-				.orElse(MappedRegistry(ResourceKey.createRegistryKey(ResourceLocation.fromNamespaceAndPath("surwebyor", "nobiomesfound")), Lifecycle.stable()))!!
+				.getOrElse {
+					LOGGER.warn("Aforementioned dimension doesn't seem to have a biome registry accessor. Biome coloring may fail.")
+					return@getOrElse MappedRegistry(ResourceKey.createRegistryKey(ResourceLocation.fromNamespaceAndPath("surwebyor", "nobiomesfound")), Lifecycle.stable())
+				}
 				.entrySet()
 			)
 			LEVELS[level.dimension()] = level
@@ -89,6 +99,26 @@ object Main : ModInitializer {
 			SERVER = null
 			LOGGER.info("Surwebyor is DONE with you! >:(   (jk, it's still friendly - the current session isn't tho)")
 		}
+		CommandRegistrationCallback.EVENT.register { dispatcher, _, _ ->
+			dispatcher.register(Commands.literal("surwebyor-dump-biomes").executes {
+				context -> val sender = context.source
+				if (FabricLoader.getInstance().environmentType == EnvType.SERVER) {
+					sender.sendFailure(Component.literal("You must be in singleplayer for this to make any sense."))
+					return@executes 0
+				}
+				try {
+					sender.sendSystemMessage(Component.literal("Trying to save a new config, with all biomes of this world..."))
+					FabricLoader.getInstance().configDir.resolve(CONFIGNAME).toFile().writeText(JSON.encodeToString(CONFIG))
+					sender.sendSuccess({
+						return@sendSuccess Component.literal("New Surwebyor config saved!")
+					}, true)
+					return@executes 1
+				} catch (_: Throwable) {
+					sender.sendFailure(Component.literal("Something went wrong when saving the file! Make sure you have correct permissions (in your filesystem, not in-game), that the config folder exists, that there's enough space on your drive, etc."))
+					return@executes 0
+				}
+			})
+		}
 
 		LOGGER.info("Surwebyor is done starting.")
 	}
@@ -107,7 +137,7 @@ object Main : ModInitializer {
 					)
                     EnvType.SERVER -> {
 						LOGGER.warn("Your Surwebyor config doesn't contain any biome color information for $key and you're on a server, where that information cannot be obtained. Falling back on vanilla green colors for that biome.")
-						 /*return@when*/ BiomeColor(
+							/*return@when*/ BiomeColor(
 							RGB.of(MapColor.GRASS.calculateRGBColor(MapColor.Brightness.HIGH), true),
 							RGB.of(MapColor.PLANT.calculateRGBColor(MapColor.Brightness.HIGH), true)
 						)
